@@ -87,8 +87,8 @@ impl Selectors {
         // The "simple" parts we get from evaluating interpolations may
         // contain high-level selector separators (i.e. ","), so we need to
         // parse the selectors again, from a string representation.
-        use crate::parser::selectors::selectors;
-        Ok(selectors(format!("{} ", s).as_bytes())?.1)
+        use crate::parser::{selectors::selectors, Span};
+        Ok(selectors(Span::new(format!("{} ", s).as_bytes()))?.1)
     }
 }
 

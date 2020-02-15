@@ -172,6 +172,7 @@ fn make_call(name: &str, args: Vec<css::Value>) -> css::Value {
 #[test]
 fn test_rgb() {
     use crate::parser::formalargs::call_args;
+    use crate::parser::Span;
     use crate::value::Rgba;
     use crate::variablescope::GlobalScope;
     let scope = GlobalScope::new(Default::default());
@@ -181,7 +182,7 @@ fn test_rgb() {
             .unwrap()
             .call(
                 &scope,
-                &call_args(b"(17, 0, 225)")
+                &call_args(Span::new(b"(17, 0, 225)"))
                     .unwrap()
                     .1
                     .evaluate(&scope, true)

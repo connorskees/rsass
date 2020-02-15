@@ -5,7 +5,7 @@ use super::strings::{
 };
 use super::unit::unit;
 use super::util::{opt_spacelike, spacelike2};
-use super::{input_to_string, sass_string};
+use super::{input_to_string, sass_string, Span};
 use crate::sass::{SassString, Value};
 use crate::value::{ListSeparator, Number, Operator, Rgba};
 use nom::branch::alt;
@@ -22,7 +22,7 @@ use nom::IResult;
 use num_rational::Rational;
 use std::str::from_utf8;
 
-pub fn value_expression(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn value_expression(input: Span) -> IResult<Span, Value> {
     let (input, result) = separated_nonempty_list(
         preceded(tag(","), opt_spacelike),
         space_list,
@@ -39,14 +39,14 @@ pub fn value_expression(input: &[u8]) -> IResult<&[u8], Value> {
     ))
 }
 
-pub fn space_list(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn space_list(input: Span) -> IResult<Span, Value> {
     let (input, first) = se_or_ext_string(input)?;
     let (input, list) = fold_many0(
         pair(multispace0, se_or_ext_string),
         (vec![first], false),
         |(mut list, mut unreq): (Vec<Value>, bool), (s, item)| {
             let mut appended = false;
-            if let (b"", &Value::Literal(ref s2)) = (s, &item) {
+            if let (b"", &Value::Literal(ref s2)) = (*s.fragment(), &item) {
                 if let Some(&mut Value::Literal(ref mut s1)) = list.last_mut()
                 {
                     if s1.is_unquoted() && s2.is_unquoted() {
@@ -75,11 +75,11 @@ pub fn space_list(input: &[u8]) -> IResult<&[u8], Value> {
     ))
 }
 
-fn se_or_ext_string(input: &[u8]) -> IResult<&[u8], Value> {
+fn se_or_ext_string(input: Span) -> IResult<Span, Value> {
     alt((single_expression, map(sass_string_ext, Value::Literal)))(input)
 }
 
-fn single_expression(input: &[u8]) -> IResult<&[u8], Value> {
+fn single_expression(input: Span) -> IResult<Span, Value> {
     let (input, a) = logic_expression(input)?;
     fold_many0(
         pair(
@@ -98,7 +98,7 @@ fn single_expression(input: &[u8]) -> IResult<&[u8], Value> {
     )(input)
 }
 
-fn logic_expression(input: &[u8]) -> IResult<&[u8], Value> {
+fn logic_expression(input: Span) -> IResult<Span, Value> {
     let (input, a) = sum_expression(input)?;
     fold_many0(
         pair(
@@ -121,7 +121,7 @@ fn logic_expression(input: &[u8]) -> IResult<&[u8], Value> {
     )(input)
 }
 
-fn sum_expression(input: &[u8]) -> IResult<&[u8], Value> {
+fn sum_expression(input: Span) -> IResult<Span, Value> {
     let (mut rest, mut v) = term_value(input)?;
     while let Ok((nrest, (op, v2))) = alt((
         pair(
@@ -149,16 +149,16 @@ fn sum_expression(input: &[u8]) -> IResult<&[u8], Value> {
     Ok((rest, v))
 }
 
-fn term_value(input: &[u8]) -> IResult<&[u8], Value> {
+fn term_value(input: Span) -> IResult<Span, Value> {
     let (mut rest, mut v) = single_value(input)?;
     while let Ok((nrest, (s1, op, s2, v2))) = tuple((
-        map(multispace0, |s: &[u8]| !s.is_empty()),
+        map(multispace0, |s: Span| !s.fragment().is_empty()),
         alt((
-            value(Operator::Multiply, tag(b"*")),
-            value(Operator::Div, tag(b"/")),
-            value(Operator::Modulo, tag(b"%")),
+            value(Operator::Multiply, tag("*")),
+            value(Operator::Div, tag("/")),
+            value(Operator::Modulo, tag("%")),
         )),
-        map(multispace0, |s: &[u8]| !s.is_empty()),
+        map(multispace0, |s: Span| !s.fragment().is_empty()),
         single_value,
     ))(rest)
     {
@@ -168,7 +168,7 @@ fn term_value(input: &[u8]) -> IResult<&[u8], Value> {
     Ok((rest, v))
 }
 
-pub fn single_value(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn single_value(input: Span) -> IResult<Span, Value> {
     alt((
         simple_value,
         delimited(
@@ -186,7 +186,7 @@ pub fn single_value(input: &[u8]) -> IResult<&[u8], Value> {
     ))(input)
 }
 
-fn simple_value(input: &[u8]) -> IResult<&[u8], Value> {
+fn simple_value(input: Span) -> IResult<Span, Value> {
     let s_v = alt((
         bang,
         value(Value::True, tag("true")),
@@ -212,7 +212,7 @@ fn simple_value(input: &[u8]) -> IResult<&[u8], Value> {
     Ok(s_v(input)?)
 }
 
-fn bang(input: &[u8]) -> IResult<&[u8], Value> {
+fn bang(input: Span) -> IResult<Span, Value> {
     map(
         map_res(
             preceded(
@@ -225,23 +225,23 @@ fn bang(input: &[u8]) -> IResult<&[u8], Value> {
     )(input)
 }
 
-fn unicode_range(input: &[u8]) -> IResult<&[u8], Value> {
+fn unicode_range(input: Span) -> IResult<Span, Value> {
     let (rest, _) = tag_no_case("U+")(input)?;
     let (rest, a) = many_m_n(0, 6, one_of("0123456789ABCDEFabcdef"))(rest)?;
     let (rest, _) = opt(alt((
         preceded(tag("-"), many_m_n(1, 6, one_of("0123456789ABCDEFabcdef"))),
         many_m_n(1, 6 - a.len(), one_of("?")),
     )))(rest)?;
-    let length = input.len() - rest.len();
-    let matched = &input[0..length];
+    let length = input.fragment().len() - rest.fragment().len();
+    let matched = &input.fragment()[0..length];
     Ok((
         rest,
         // The unwrap should be ok, as only ascii is matched.
-        Value::UnicodeRange(input_to_string(matched).unwrap()),
+        Value::UnicodeRange(from_utf8(matched).unwrap().to_string()),
     ))
 }
 
-fn bracket_list(input: &[u8]) -> IResult<&[u8], Value> {
+fn bracket_list(input: Span) -> IResult<Span, Value> {
     let (input, content) =
         delimited(tag("["), opt(value_expression), tag("]"))(input)?;
     Ok((
@@ -258,7 +258,7 @@ fn bracket_list(input: &[u8]) -> IResult<&[u8], Value> {
     ))
 }
 
-fn number(input: &[u8]) -> IResult<&[u8], Value> {
+fn number(input: Span) -> IResult<Span, Value> {
     let (input, (sign, (lead_zero, num), unit)) = tuple((
         opt(alt((tag("-"), tag("+")))),
         alt((
@@ -269,6 +269,7 @@ fn number(input: &[u8]) -> IResult<&[u8], Value> {
         )),
         unit,
     ))(input)?;
+    let sign = sign.map(|s| *s.fragment());
     Ok((
         input,
         Value::Numeric(
@@ -282,7 +283,7 @@ fn number(input: &[u8]) -> IResult<&[u8], Value> {
     ))
 }
 
-pub fn decimal_integer(input: &[u8]) -> IResult<&[u8], Rational> {
+pub fn decimal_integer(input: Span) -> IResult<Span, Rational> {
     map(
         fold_many1(
             // Note: We should use bytes directly, one_of returns a char.
@@ -294,7 +295,7 @@ pub fn decimal_integer(input: &[u8]) -> IResult<&[u8], Rational> {
     )(input)
 }
 
-pub fn decimal_decimals(input: &[u8]) -> IResult<&[u8], Rational> {
+pub fn decimal_decimals(input: Span) -> IResult<Span, Rational> {
     map(
         preceded(
             tag("."),
@@ -306,11 +307,11 @@ pub fn decimal_decimals(input: &[u8]) -> IResult<&[u8], Rational> {
     )(input)
 }
 
-pub fn variable(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn variable(input: Span) -> IResult<Span, Value> {
     map(preceded(tag("$"), name), Value::Variable)(input)
 }
 
-fn hex_color(input: &[u8]) -> IResult<&[u8], Value> {
+fn hex_color(input: Span) -> IResult<Span, Value> {
     let (rest, rgba) = delimited(
         tag("#"),
         map(
@@ -318,24 +319,24 @@ fn hex_color(input: &[u8]) -> IResult<&[u8], Value> {
                 tuple((hexchar2, hexchar2, hexchar2, opt(hexchar2))),
                 tuple((hexchar, hexchar, hexchar, opt(hexchar))),
             )),
-            |(r, g, b, a): (&[u8], &[u8], &[u8], Option<&[u8]>)| {
+            |(r, g, b, a): (Span, Span, Span, Option<Span>)| {
                 Rgba::from_rgba(
-                    from_hex(&r),
-                    from_hex(&g),
-                    from_hex(&b),
-                    a.map(|a| from_hex(&a)).unwrap_or(255),
+                    from_hex(r),
+                    from_hex(g),
+                    from_hex(b),
+                    a.map(|a| from_hex(a)).unwrap_or(255),
                 )
             },
         ),
         peek(map(not(alphanumeric1), |_| ())),
     )(input)?;
-    let length = input.len() - rest.len();
+    let length = input.fragment().len() - rest.fragment().len();
     // Unwrap should be ok as only ascii is matched.
-    let raw = input_to_string(&input[0..length]).unwrap();
+    let raw = from_utf8(&input.fragment()[0..length]).unwrap().to_string();
     Ok((rest, Value::Color(rgba, Some(raw))))
 }
 
-pub fn unary_op(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn unary_op(input: Span) -> IResult<Span, Value> {
     map(
         pair(
             terminated(
@@ -352,7 +353,7 @@ pub fn unary_op(input: &[u8]) -> IResult<&[u8], Value> {
     )(input)
 }
 
-fn special_function(input: &[u8]) -> IResult<&[u8], Value> {
+fn special_function(input: Span) -> IResult<Span, Value> {
     let (input, start) = recognize(terminated(
         alt((
             map(
@@ -379,12 +380,12 @@ fn special_function(input: &[u8]) -> IResult<&[u8], Value> {
     let (input, mut args) = special_args(input)?;
     let (input, end) = tag(")")(input)?;
 
-    args.prepend(from_utf8(start).unwrap());
-    args.append(&from_utf8(end).unwrap().into());
+    args.prepend(from_utf8(start.fragment()).unwrap());
+    args.append(&from_utf8(end.fragment()).unwrap().into());
     Ok((input, Value::Literal(args)))
 }
 
-pub fn function_call(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn function_call(input: Span) -> IResult<Span, Value> {
     map(pair(sass_string, call_args), |(name, args)| {
         Value::Call(name, args)
     })(input)
@@ -399,14 +400,15 @@ fn literal_or_color(s: SassString) -> Value {
     Value::Literal(s)
 }
 
-pub fn hexchar(input: &[u8]) -> IResult<&[u8], &[u8]> {
+pub fn hexchar(input: Span) -> IResult<Span, Span> {
     recognize(one_of("0123456789ABCDEFabcdef"))(input)
 }
-pub fn hexchar2(input: &[u8]) -> IResult<&[u8], &[u8]> {
+pub fn hexchar2(input: Span) -> IResult<Span, Span> {
     recognize(pair(hexchar, hexchar))(input)
 }
 
-fn from_hex(v: &[u8]) -> u8 {
+fn from_hex(v: Span) -> u8 {
+    let v = v.fragment();
     let i = u8::from_str_radix(from_utf8(v).unwrap(), 16).unwrap();
     if v.len() > 1 {
         i
@@ -415,7 +417,7 @@ fn from_hex(v: &[u8]) -> u8 {
     }
 }
 
-pub fn dictionary(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn dictionary(input: Span) -> IResult<Span, Value> {
     delimited(
         preceded(tag("("), opt_spacelike),
         dictionary_inner,
@@ -423,7 +425,7 @@ pub fn dictionary(input: &[u8]) -> IResult<&[u8], Value> {
     )(input)
 }
 
-pub fn dictionary_inner(input: &[u8]) -> IResult<&[u8], Value> {
+pub fn dictionary_inner(input: Span) -> IResult<Span, Value> {
     let (input, items) = terminated(
         separated_nonempty_list(
             delimited(opt_spacelike, tag(","), opt_spacelike),
@@ -743,7 +745,11 @@ mod test {
     }
 
     fn check_expr(expr: &str, value: Value) {
-        assert_eq!(value_expression(expr.as_bytes()), Ok((&b";"[..], value)))
+        assert_eq!(
+            value_expression(Span::new(expr.as_bytes()))
+                .map(|(rest, value)| (*rest.fragment(), value)),
+            Ok((&b";"[..], value)),
+        )
     }
 
     #[test]
@@ -757,7 +763,7 @@ mod test {
                         .unwrap()
                         .format(Default::default())
                         .to_string(),
-                    rest
+                    *rest.fragment(),
                 ),
                 ("http://).com/".to_string(), &b""[..])
             );
@@ -776,7 +782,7 @@ mod test {
                         .unwrap()
                         .format(Default::default())
                         .to_string(),
-                    rest
+                    *rest.fragment(),
                 ),
                 ("url(http://).com/)".to_string(), &b""[..])
             );
@@ -795,7 +801,7 @@ mod test {
                         .unwrap()
                         .format(Default::default())
                         .to_string(),
-                    rest
+                    *rest.fragment(),
                 ),
                 ("url(//).com/)".to_string(), &b""[..])
             );
@@ -804,7 +810,7 @@ mod test {
         }
     }
 
-    fn value_expression_eof(input: &[u8]) -> IResult<&[u8], Value> {
-        all_consuming(value_expression)(input)
+    fn value_expression_eof(input: &[u8]) -> IResult<Span, Value> {
+        all_consuming(value_expression)(Span::new(input))
     }
 }

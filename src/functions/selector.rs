@@ -2,6 +2,7 @@ use super::SassFunction;
 use crate::css::Value;
 use crate::error::Error;
 use crate::parser::selectors::{selector, selectors};
+use crate::parser::Span;
 use crate::selectors::{Selector, Selectors};
 use crate::value::Quotes;
 use std::collections::BTreeMap;
@@ -63,7 +64,8 @@ fn parse_selectors(v: Value) -> Result<Selectors, Error> {
     if s.is_empty() {
         Ok(Selectors::root())
     } else {
-        let (rest, result) = selectors(s.as_bytes())?;
+        let (rest, result) = selectors(Span::new(s.as_bytes()))?;
+        let rest = rest.fragment();
         if !rest.is_empty() && rest != b"," {
             Err(Error::S(format!(
                 "Unexpected remains in parse_selectors: {:?}",
@@ -76,7 +78,8 @@ fn parse_selectors(v: Value) -> Result<Selectors, Error> {
 }
 
 fn parse_selector(s: &str) -> Result<Selector, Error> {
-    let (rest, result) = selector(s.as_bytes())?;
+    let (rest, result) = selector(Span::new(s.as_bytes()))?;
+    let rest = rest.fragment();
     if !rest.is_empty() {
         Err(Error::S(format!(
             "Unexpected remains in parse_selector: {:?}",

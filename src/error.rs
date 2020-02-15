@@ -100,9 +100,9 @@ impl From<FromUtf8Error> for Error {
         Error::Encoding(e)
     }
 }
-
-impl<'a> From<nom::Err<(&[u8], nom::error::ErrorKind)>> for Error {
-    fn from(e: nom::Err<(&[u8], nom::error::ErrorKind)>) -> Self {
+use crate::parser::Span;
+impl<'a> From<nom::Err<(Span<'a>, nom::error::ErrorKind)>> for Error {
+    fn from(e: nom::Err<(Span<'a>, nom::error::ErrorKind)>) -> Self {
         Error::S(format!("Parse error: {:?}", e))
     }
 }
