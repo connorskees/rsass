@@ -2,7 +2,7 @@ use super::SassFunction;
 use crate::css::Value;
 use crate::error::Error;
 use crate::parser::selectors::{selector, selectors};
-use crate::parser::Span;
+use crate::parser::{check_all_parsed, Span};
 use crate::selectors::{Selector, Selectors};
 use crate::value::Quotes;
 use std::collections::BTreeMap;
@@ -64,28 +64,11 @@ fn parse_selectors(v: Value) -> Result<Selectors, Error> {
     if s.is_empty() {
         Ok(Selectors::root())
     } else {
-        let (rest, result) = selectors(Span::new(s.as_bytes()))?;
-        let rest = rest.fragment();
-        if !rest.is_empty() && rest != b"," {
-            Err(Error::S(format!(
-                "Unexpected remains in parse_selectors: {:?}",
-                rest
-            )))
-        } else {
-            Ok(result)
-        }
+        // FIXME: Old code allowd a trailing comma here.  Add back or remove?
+        Ok(check_all_parsed(selectors(Span::new(s.as_bytes())))?)
     }
 }
 
 fn parse_selector(s: &str) -> Result<Selector, Error> {
-    let (rest, result) = selector(Span::new(s.as_bytes()))?;
-    let rest = rest.fragment();
-    if !rest.is_empty() {
-        Err(Error::S(format!(
-            "Unexpected remains in parse_selector: {:?}",
-            rest
-        )))
-    } else {
-        Ok(result)
-    }
+    Ok(check_all_parsed(selector(Span::new(s.as_bytes())))?)
 }

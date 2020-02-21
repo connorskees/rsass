@@ -1,7 +1,8 @@
 use crate::css::Value;
-use nom;
+use crate::parser::{ParseError, Span};
 use std::convert::From;
 use std::path::PathBuf;
+use std::str::from_utf8;
 use std::string::FromUtf8Error;
 use std::{fmt, io};
 
@@ -13,11 +14,7 @@ pub enum Error {
     Encoding(FromUtf8Error),
     BadValue(String),
     BadArguments(String),
-    ParseError {
-        file: String,
-        pos: ErrPos,
-        kind: Option<nom::error::ErrorKind>,
-    },
+    ParseError { msg: String, pos: ErrPos },
     S(String),
     UndefinedVariable(String),
 }
@@ -70,21 +67,33 @@ impl fmt::Display for Error {
             Error::UndefinedVariable(ref name) => {
                 write!(out, "Undefined variable: \"${}\"", name)
             }
-            Error::ParseError {
-                ref file,
-                ref pos,
-                ref kind,
-            } => write!(
-                out,
-                "{}:{}: Parse error, expected {}",
-                file,
-                pos,
-                kind.as_ref()
-                    .map(|k| k.description())
-                    .unwrap_or("something else"),
-            ),
+            Error::ParseError { ref msg, ref pos } => {
+                let line_no = pos.line_no.to_string();
+                write!(
+                    out,
+                    "{0:lnw$} ,\
+                     \n{ln} | {line}\
+                     \n{0:lnw$} |{0:>lpos$}^ {msg}\
+                     \n{0:lnw$} '",
+                    "",
+                    line = pos.line,
+                    msg = msg,
+                    ln = line_no,
+                    lnw = line_no.len(),
+                    lpos = pos.line_pos,
+                )
+            }
             // fallback
             ref x => write!(out, "{:?}", x),
+        }
+    }
+}
+
+impl<'a> From<ParseError<'a>> for Error {
+    fn from(err: ParseError) -> Self {
+        Error::ParseError {
+            msg: format!("Parse error: {:?}", err.err),
+            pos: ErrPos::magic_pos(err.span),
         }
     }
 }
@@ -100,42 +109,43 @@ impl From<FromUtf8Error> for Error {
         Error::Encoding(e)
     }
 }
-use crate::parser::Span;
-impl<'a> From<nom::Err<(Span<'a>, nom::error::ErrorKind)>> for Error {
-    fn from(e: nom::Err<(Span<'a>, nom::error::ErrorKind)>) -> Self {
-        Error::S(format!("Parse error: {:?}", e))
-    }
-}
 
 /// Position data for a parse error.
-///
-/// To be usefull for reporting the error to an end user, this
-/// contains the position in two forms, both the byte index (an
-/// index of the parsed byte slice) and the line number and character
-/// position in that line.
 #[derive(Debug)]
 pub struct ErrPos {
-    pub index: usize,
-    pub line: usize,
-    pub pos: usize,
+    line: String,
+    line_no: usize,
+    line_pos: usize,
 }
 
 impl ErrPos {
-    pub fn pos_of(index: usize, buffer: &[u8]) -> Self {
-        let before = &buffer[0..index];
+    fn magic_pos(span: Span) -> Self {
+        use std::slice;
+
+        let self_bytes = span.fragment();
+        let self_ptr = self_bytes.as_ptr();
+        let offset = span.get_column() - 1;
+        let the_line = unsafe {
+            assert!(
+                offset <= isize::max_value() as usize,
+                "offset is too big"
+            );
+            let orig_input_ptr = self_ptr.offset(-(offset as isize));
+            slice::from_raw_parts(
+                orig_input_ptr,
+                offset + span.fragment().len(),
+            )
+        };
+        let the_line = the_line
+            .split(|c| *c == b'\n')
+            .next()
+            .and_then(|s| from_utf8(s).ok())
+            .unwrap_or("<<failed to display line>>");
+
         ErrPos {
-            index,
-            line: 1 + bytecount::count(before, b'\n'),
-            pos: bytecount::num_chars(
-                before.rsplit(|c| *c == b'\n').next().unwrap(),
-            ),
+            line: the_line.to_string(),
+            line_no: span.location_line() as usize,
+            line_pos: span.get_utf8_column(),
         }
-    }
-}
-impl fmt::Display for ErrPos {
-    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
-        self.line.fmt(out)?;
-        out.write_str(":")?;
-        self.pos.fmt(out)
     }
 }

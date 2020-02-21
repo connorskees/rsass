@@ -14,7 +14,7 @@ use self::util::{
 use self::value::{
     dictionary, function_call, single_value, value_expression,
 };
-use crate::error::{ErrPos, Error};
+use crate::error::Error;
 use crate::functions::SassFunction;
 #[cfg(test)]
 use crate::sass::{CallArgs, FormalArgs};
@@ -27,7 +27,6 @@ use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not, tag};
 use nom::character::complete::one_of;
 use nom::combinator::{all_consuming, map, map_res, opt, peek, value};
-use nom::error::ErrorKind;
 use nom::multi::{many0, many_till, separated_list, separated_nonempty_list};
 use nom::sequence::{delimited, pair, preceded, terminated};
 use nom::{Err, IResult};
@@ -43,9 +42,8 @@ pub type Span<'a> = LocatedSpan<&'a [u8]>;
 ///
 /// Returns a single value (or an error).
 pub fn parse_value_data(data: &[u8]) -> Result<Value, Error> {
-    let (rest, result) = all_consuming(value_expression)(Span::new(data))?;
-    assert!(rest.fragment().is_empty());
-    Ok(result)
+    let data = Span::new(data);
+    Ok(check_all_parsed(all_consuming(value_expression)(data))?)
 }
 
 /// Parse a scss file.
@@ -56,34 +54,60 @@ pub fn parse_scss_file(file: &Path) -> Result<Vec<Item>, Error> {
     let mut data = vec![];
     f.read_to_end(&mut data)
         .map_err(|e| Error::Input(file.into(), e))?;
-    parse_scss_data(&data).map_err(|(pos, kind)| Error::ParseError {
-        file: file.to_string_lossy().into(),
-        pos: ErrPos::pos_of(pos, &data),
-        kind,
-    })
+    // TODO: Include the file info in the Span!
+    let data = Span::new(&data);
+    Ok(check_all_parsed(sassfile(data))?)
 }
 
 /// Parse scss data from a buffer.
 ///
 /// Returns a vec of the top level items of the file (or an error message).
-pub fn parse_scss_data(
-    data: &[u8],
-) -> Result<Vec<Item>, (usize, Option<ErrorKind>)> {
-    match sassfile(Span::new(data)) {
+pub fn parse_scss_data(data: &[u8]) -> Result<Vec<Item>, ParseError> {
+    check_all_parsed(sassfile(Span::new(data)))
+}
+
+pub fn check_all_parsed<'a, T>(
+    result: Result<
+        (Span<'a>, T),
+        nom::Err<(Span<'a>, nom::error::ErrorKind)>,
+    >,
+) -> Result<T, ParseError<'a>> {
+    match result {
         Ok((rest, items)) => {
             if rest.fragment().is_empty() {
                 Ok(items)
             } else {
-                Err((data.len() - rest.fragment().len(), None))
+                Err(ParseError {
+                    err: None,
+                    span: rest,
+                })
             }
         }
-        Err(Err::Error((rest, err))) => {
-            Err((data.len() - rest.fragment().len(), Some(err)))
-        }
-        Err(Err::Incomplete(_needed)) => Err((data.len(), None)),
-        Err(Err::Failure((rest, err))) => {
-            Err((data.len() - rest.fragment().len(), Some(err)))
-        }
+        Err(Err::Error((span, err))) => Err(ParseError {
+            err: Some(err),
+            span,
+        }),
+        Err(Err::Incomplete(_needed)) => Err(ParseError {
+            err: None,
+            span: Span::new(&[]),
+        }),
+        Err(Err::Failure((span, err))) => Err(ParseError {
+            err: Some(err),
+            span,
+        }),
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseError<'a> {
+    pub err: Option<nom::error::ErrorKind>,
+    pub span: Span<'a>,
+}
+
+use std::fmt;
+impl<'a> fmt::Display for ParseError<'a> {
+    fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
+        write!(out, "{:?}: {:?}", self.span, self.err)
     }
 }
 

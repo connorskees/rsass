@@ -380,9 +380,7 @@ impl Scope for GlobalScope {
 
 #[cfg(test)]
 pub mod test {
-    use crate::parser::{value::value_expression, Span};
     use crate::variablescope::*;
-    use std::str::from_utf8;
 
     #[test]
     fn variable_value() {
@@ -724,15 +722,25 @@ pub mod test {
         s: &[(&str, &str)],
         expression: &[u8],
     ) -> Result<String, Error> {
+        use crate::parser::value::value_expression;
+        use crate::parser::{check_all_parsed, Span};
+        use nom::bytes::complete::tag;
+        use nom::combinator::opt;
+        use nom::sequence::terminated;
         let mut scope = GlobalScope::new(Default::default());
         for &(name, ref val) in s {
-            let (end, value) = value_expression(Span::new(val.as_bytes()))?;
-            let value = value.evaluate(&scope)?;
-            assert_eq!(Ok(""), from_utf8(end.fragment()));
-            scope.define(name, &value);
+            scope.define(
+                name,
+                &check_all_parsed(value_expression(Span::new(
+                    val.as_bytes(),
+                )))?
+                .evaluate(&scope)?,
+            );
         }
-        let (end, foo) = value_expression(Span::new(expression))?;
-        assert_eq!(Ok(";"), from_utf8(end.fragment()));
+        let foo = check_all_parsed(terminated(
+            value_expression,
+            opt(tag(";")),
+        )(Span::new(expression)))?;
         Ok(foo
             .evaluate(&mut scope)?
             .format(scope.get_format())
