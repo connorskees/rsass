@@ -724,6 +724,7 @@ pub mod test {
     ) -> Result<String, Error> {
         use crate::parser::value::value_expression;
         use crate::parser::{check_all_parsed, Span};
+        use crate::test_span;
         use nom::bytes::complete::tag;
         use nom::combinator::opt;
         use nom::sequence::terminated;
@@ -731,8 +732,8 @@ pub mod test {
         for &(name, ref val) in s {
             scope.define(
                 name,
-                &check_all_parsed(value_expression(Span::new(
-                    val.as_bytes(),
+                &check_all_parsed(value_expression(test_span!(
+                    val.as_bytes()
                 )))?
                 .evaluate(&scope)?,
             );
@@ -740,7 +741,7 @@ pub mod test {
         let foo = check_all_parsed(terminated(
             value_expression,
             opt(tag(";")),
-        )(Span::new(expression)))?;
+        )(test_span!(expression)))?;
         Ok(foo
             .evaluate(&mut scope)?
             .format(scope.get_format())

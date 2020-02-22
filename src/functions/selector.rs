@@ -2,7 +2,7 @@ use super::SassFunction;
 use crate::css::Value;
 use crate::error::Error;
 use crate::parser::selectors::{selector, selectors};
-use crate::parser::{check_all_parsed, Span};
+use crate::parser::{check_all_parsed, code_span};
 use crate::selectors::{Selector, Selectors};
 use crate::value::Quotes;
 use std::collections::BTreeMap;
@@ -65,10 +65,12 @@ fn parse_selectors(v: Value) -> Result<Selectors, Error> {
         Ok(Selectors::root())
     } else {
         // FIXME: Old code allowd a trailing comma here.  Add back or remove?
-        Ok(check_all_parsed(selectors(Span::new(s.as_bytes())))?)
+        // TODO: Use a span from the value rather than claiming its hardcoded.
+        Ok(check_all_parsed(selectors(code_span(s.as_bytes())))?)
     }
 }
 
 fn parse_selector(s: &str) -> Result<Selector, Error> {
-    Ok(check_all_parsed(selector(Span::new(s.as_bytes())))?)
+    // TODO: Use a span from the value rather than claiming its hardcoded.
+    Ok(check_all_parsed(selector(code_span(s.as_bytes())))?)
 }

@@ -1,5 +1,5 @@
 use crate::css::Value;
-use crate::parser::{ParseError, Span};
+use crate::parser::{ParseError, ParseFile, Span};
 use std::convert::From;
 use std::path::PathBuf;
 use std::str::from_utf8;
@@ -81,7 +81,26 @@ impl fmt::Display for Error {
                     ln = line_no,
                     lnw = line_no.len(),
                     lpos = pos.line_pos,
-                )
+                )?;
+                let mut nextpos = Some(pos);
+                while let Some(pos) = nextpos {
+                    write!(
+                        out,
+                        "\n{0:lnw$} {file} {row}:{col}  {cause}",
+                        "",
+                        lnw = line_no.len(),
+                        file = pos.file.name,
+                        row = pos.line_no,
+                        col = pos.line_pos - 1,
+                        cause = if pos.file.imported.is_some() {
+                            "import"
+                        } else {
+                            "root stylesheet"
+                        },
+                    )?;
+                    nextpos = pos.file.imported.as_deref();
+                }
+                Ok(())
             }
             // fallback
             ref x => write!(out, "{:?}", x),
@@ -111,15 +130,16 @@ impl From<FromUtf8Error> for Error {
 }
 
 /// Position data for a parse error.
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct ErrPos {
     line: String,
     line_no: usize,
     line_pos: usize,
+    file: ParseFile,
 }
 
 impl ErrPos {
-    fn magic_pos(span: Span) -> Self {
+    pub fn magic_pos(span: Span) -> Self {
         use std::slice;
 
         let self_bytes = span.fragment();
@@ -146,6 +166,7 @@ impl ErrPos {
             line: the_line.to_string(),
             line_no: span.location_line() as usize,
             line_pos: span.get_utf8_column(),
+            file: span.extra.clone(),
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::error::ErrPos;
 use crate::functions::SassFunction;
 use crate::sass::{CallArgs, FormalArgs, SassString, Value};
 use crate::selectors::Selectors;
@@ -6,7 +7,7 @@ use crate::selectors::Selectors;
 /// Scoping items contains further sequences of items.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Item {
-    Import(Vec<Value>, Value),
+    Import(Vec<Value>, Value, ErrPos),
     VariableDeclaration {
         name: String,
         val: Value,

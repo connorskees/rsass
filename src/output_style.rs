@@ -1,7 +1,7 @@
 use crate::css::Value;
 use crate::error::Error;
 use crate::file_context::FileContext;
-use crate::parser::parse_scss_file;
+use crate::parser::parse_imported_scss_file;
 use crate::sass::{FormalArgs, Item};
 use crate::selectors::Selectors;
 use crate::variablescope::{Scope, ScopeImpl};
@@ -72,7 +72,7 @@ impl OutputFormat {
         result: &mut CssWriter,
     ) -> Result<(), Error> {
         match *item {
-            Item::Import(ref names, ref args) => {
+            Item::Import(ref names, ref args, ref pos) => {
                 if args.is_null() {
                     for name in names {
                         let name = name.evaluate(scope)?;
@@ -82,7 +82,10 @@ impl OutputFormat {
                             if let Some((sub_context, file)) =
                                 file_context.find_file(x.as_ref())
                             {
-                                for item in parse_scss_file(&file)? {
+                                for item in parse_imported_scss_file(
+                                    &file,
+                                    Some(Box::new(pos.clone())),
+                                )? {
                                     self.handle_root_item(
                                         &item,
                                         scope,
@@ -416,14 +419,18 @@ impl OutputFormat {
     ) -> Result<(), Error> {
         for b in body {
             match *b {
-                Item::Import(ref names, ref args) => {
+                Item::Import(ref names, ref args, ref pos) => {
                     if args.is_null() {
                         for name in names {
                             let name = name.evaluate(scope)?;
                             if let Value::Literal(ref x, _) = name {
                                 let (sub_context, file) =
                                     file_context.file(x.as_ref());
-                                let items = parse_scss_file(&file)?;
+                                let items = parse_imported_scss_file(
+                                    &file,
+                                    Some(Box::new(pos.clone())),
+                                )?;
+
                                 self.handle_body(
                                     direct,
                                     sub,

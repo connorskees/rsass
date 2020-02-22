@@ -73,8 +73,9 @@ mod test {
     }
 
     fn do_test(src: &[u8], content: &[u8], trail: &[u8]) {
+        use crate::test_span;
         assert_eq!(
-            comment(Span::new(src))
+            comment(test_span!(src))
                 .map(|(t, c)| (*t.fragment(), *c.fragment())),
             Ok((trail, content)),
         )
