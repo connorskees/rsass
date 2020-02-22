@@ -98,7 +98,7 @@ impl fmt::Display for Error {
                             "root stylesheet"
                         },
                     )?;
-                    nextpos = pos.file.imported.as_deref();
+                    nextpos = pos.file.imported.as_ref().map(|b| b.as_ref());
                 }
                 Ok(())
             }
