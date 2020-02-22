@@ -1,8 +1,7 @@
 use crate::css::Value;
-use crate::parser::{ParseError, ParseFile, Span};
+use crate::parser::{ParseError, SourcePos};
 use std::convert::From;
 use std::path::PathBuf;
-use std::str::from_utf8;
 use std::string::FromUtf8Error;
 use std::{fmt, io};
 
@@ -14,7 +13,7 @@ pub enum Error {
     Encoding(FromUtf8Error),
     BadValue(String),
     BadArguments(String),
-    ParseError { msg: String, pos: ErrPos },
+    ParseError { msg: String, pos: SourcePos },
     S(String),
     UndefinedVariable(String),
 }
@@ -89,16 +88,16 @@ impl fmt::Display for Error {
                         "\n{0:lnw$} {file} {row}:{col}  {cause}",
                         "",
                         lnw = line_no.len(),
-                        file = pos.file.name,
+                        file = pos.file.name(),
                         row = pos.line_no,
                         col = pos.line_pos - 1,
-                        cause = if pos.file.imported.is_some() {
+                        cause = if pos.file.imported_from().is_some() {
                             "import"
                         } else {
                             "root stylesheet"
                         },
                     )?;
-                    nextpos = pos.file.imported.as_ref().map(|b| b.as_ref());
+                    nextpos = pos.file.imported_from();
                 }
                 Ok(())
             }
@@ -112,7 +111,7 @@ impl<'a> From<ParseError<'a>> for Error {
     fn from(err: ParseError) -> Self {
         Error::ParseError {
             msg: format!("Parse error: {:?}", err.err),
-            pos: ErrPos::magic_pos(err.span),
+            pos: SourcePos::magic_pos(err.span),
         }
     }
 }
@@ -126,47 +125,5 @@ impl From<io::Error> for Error {
 impl From<FromUtf8Error> for Error {
     fn from(e: FromUtf8Error) -> Self {
         Error::Encoding(e)
-    }
-}
-
-/// Position data for a parse error.
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct ErrPos {
-    line: String,
-    line_no: usize,
-    line_pos: usize,
-    file: ParseFile,
-}
-
-impl ErrPos {
-    pub fn magic_pos(span: Span) -> Self {
-        use std::slice;
-
-        let self_bytes = span.fragment();
-        let self_ptr = self_bytes.as_ptr();
-        let offset = span.get_column() - 1;
-        let the_line = unsafe {
-            assert!(
-                offset <= isize::max_value() as usize,
-                "offset is too big"
-            );
-            let orig_input_ptr = self_ptr.offset(-(offset as isize));
-            slice::from_raw_parts(
-                orig_input_ptr,
-                offset + span.fragment().len(),
-            )
-        };
-        let the_line = the_line
-            .split(|c| *c == b'\n')
-            .next()
-            .and_then(|s| from_utf8(s).ok())
-            .unwrap_or("<<failed to display line>>");
-
-        ErrPos {
-            line: the_line.to_string(),
-            line_no: span.location_line() as usize,
-            line_pos: span.get_utf8_column(),
-            file: span.extra.clone(),
-        }
     }
 }

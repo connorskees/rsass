@@ -49,12 +49,14 @@ pub mod selectors;
 mod value;
 mod variablescope;
 
-pub use crate::error::{ErrPos, Error};
+pub use crate::error::Error;
 pub use crate::file_context::FileContext;
 pub use crate::functions::SassFunction;
 pub use crate::output_format::OutputFormat;
 pub use crate::output_style::OutputStyle;
-pub use crate::parser::{parse_scss_data, parse_scss_file, parse_value_data};
+pub use crate::parser::{
+    parse_scss_data, parse_scss_file, parse_value_data, SourcePos,
+};
 pub use crate::sass::Item;
 pub use crate::value::{ListSeparator, Number, Quotes, Unit};
 pub use crate::variablescope::{GlobalScope, Scope};

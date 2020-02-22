@@ -722,8 +722,8 @@ pub mod test {
         s: &[(&str, &str)],
         expression: &[u8],
     ) -> Result<String, Error> {
+        use crate::parser::check_all_parsed;
         use crate::parser::value::value_expression;
-        use crate::parser::{check_all_parsed, Span};
         use crate::test_span;
         use nom::bytes::complete::tag;
         use nom::combinator::opt;

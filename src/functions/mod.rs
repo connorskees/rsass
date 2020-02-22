@@ -172,7 +172,6 @@ fn make_call(name: &str, args: Vec<css::Value>) -> css::Value {
 #[test]
 fn test_rgb() {
     use crate::parser::formalargs::call_args;
-    use crate::parser::Span;
     use crate::test_span;
     use crate::value::Rgba;
     use crate::variablescope::GlobalScope;

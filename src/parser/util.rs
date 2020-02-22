@@ -51,7 +51,7 @@ fn ignore_lcomment(input: Span) -> IResult<Span, ()> {
 
 #[cfg(test)]
 mod test {
-    use super::{comment, Span};
+    use super::comment;
 
     #[test]
     fn comment_simple() {

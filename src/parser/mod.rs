@@ -1,4 +1,5 @@
 pub mod formalargs;
+mod pos;
 pub mod selectors;
 mod strings;
 mod unit;
@@ -14,7 +15,7 @@ use self::util::{
 use self::value::{
     dictionary, function_call, single_value, value_expression,
 };
-use crate::error::{ErrPos, Error};
+use crate::error::Error;
 use crate::functions::SassFunction;
 #[cfg(test)]
 use crate::sass::{CallArgs, FormalArgs};
@@ -31,26 +32,18 @@ use nom::multi::{many0, many_till, separated_list, separated_nonempty_list};
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use nom::{Err, IResult};
 use nom_locate::{position, LocatedSpan};
+pub use pos::{SourceName, SourcePos};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::str::{from_utf8, Utf8Error};
 
-pub type Span<'a> = LocatedSpan<&'a [u8], &'a ParseFile>;
-
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct ParseFile {
-    pub name: String,
-    pub imported: Option<Box<ErrPos>>,
-}
+pub type Span<'a> = LocatedSpan<&'a [u8], &'a SourceName>;
 
 pub fn code_span(value: &[u8]) -> Span {
     use lazy_static::lazy_static;
     lazy_static! {
-        static ref SOURCE: ParseFile = ParseFile {
-            name: String::default(),
-            imported: None,
-        };
+        static ref SOURCE: SourceName = SourceName::root("(rsass)");
     }
     Span::new_extra(value, &SOURCE)
 }
@@ -59,13 +52,10 @@ pub fn code_span(value: &[u8]) -> Span {
 #[macro_export]
 macro_rules! test_span {
     ($value:expr) => {{
-        use crate::parser::ParseFile;
+        use crate::parser::{SourceName, Span};
         use lazy_static::lazy_static;
         lazy_static! {
-            static ref SOURCE: ParseFile = ParseFile {
-                name: file!().into(),
-                imported: None,
-            };
+            static ref SOURCE: SourceName = SourceName::root(file!());
         }
         Span::new_extra($value, &SOURCE)
     }};
@@ -83,23 +73,26 @@ pub fn parse_value_data(data: &[u8]) -> Result<Value, Error> {
 ///
 /// Returns a vec of the top level items of the file (or an error message).
 pub fn parse_scss_file(file: &Path) -> Result<Vec<Item>, Error> {
-    parse_imported_scss_file(file, None)
+    do_parse_scss_file(file, &SourceName::root(file.display()))
 }
 
 pub fn parse_imported_scss_file(
     file: &Path,
-    imported_from: Option<Box<ErrPos>>,
+    from: SourcePos,
+) -> Result<Vec<Item>, Error> {
+    let source = SourceName::imported(file.display(), from);
+    do_parse_scss_file(file, &source)
+}
+
+fn do_parse_scss_file(
+    file: &Path,
+    source: &SourceName,
 ) -> Result<Vec<Item>, Error> {
     let mut f = File::open(file).map_err(|e| Error::Input(file.into(), e))?;
     let mut data = vec![];
     f.read_to_end(&mut data)
         .map_err(|e| Error::Input(file.into(), e))?;
-    // TODO: Include the file info in the Span!
-    let pf = ParseFile {
-        name: file.display().to_string(),
-        imported: imported_from,
-    };
-    let data = Span::new_extra(&data, &pf);
+    let data = Span::new_extra(&data, &source);
     Ok(check_all_parsed(sassfile(data))?)
 }
 
@@ -294,7 +287,7 @@ fn import2(input: Span) -> IResult<Span, Item> {
             Item::Import(
                 import,
                 args.unwrap_or(Value::Null),
-                ErrPos::magic_pos(position),
+                SourcePos::magic_pos(position),
             )
         },
     )(input)
